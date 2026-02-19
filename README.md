@@ -86,6 +86,41 @@ Base URL: http://{host}:{port}
     ]
     ```
 
+### Proxy mode (monitor={url})
+
+All API endpoints except `/` support optional query parameter `monitor`.
+If `monitor` is provided, the request is proxied through the current
+Health Monitor instance to the remote Health Monitor and the remote
+response is returned as-is.
+
+This is used by the UI to avoid cross-origin requests.
+
+Examples:
+
+* Get remote monitored services:
+    ```text
+    GET /list?monitor=http%3A%2F%2F10.0.0.5%3A60100
+    ```
+
+* Get remote host:
+    ```text
+    GET /host?monitor=http%3A%2F%2F10.0.0.5%3A60100
+    ```
+
+* Get remote service status:
+    ```text
+    GET /status?service=nginx.service&monitor=http%3A%2F%2F10.0.0.5%3A60100
+    ```
+
+* Get remote service errors:
+    ```text
+    GET /errors?service=nginx.service&monitor=http%3A%2F%2F10.0.0.5%3A60100
+    ```
+
+Notes:
+- `monitor` must be URL-encoded.
+- Remote `service` name is passed through unchanged.
+
 ## Install
 
 1. Create target directory:

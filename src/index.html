@@ -296,22 +296,26 @@
 
         /* ===================== API helper ===================== */
 
-        function buildApiUrl(base, path) {
-          if (base === "__self__") {
-            let root = window.location.origin +
-              window.location.pathname.replace(/\/[^\/]*$/, "");
+        function getSelfRoot() {
+          let root = window.location.origin +
+            window.location.pathname.replace(/\/[^\/]*$/, "");
 
-            if (!root.endsWith("/")) root += "/";
-            if (path.startsWith("/")) path = path.slice(1);
-
-            return root + path;
-          }
-
-          let root = String(base).trim();
           if (!root.endsWith("/")) root += "/";
+          return root;
+        }
+
+        function buildApiUrl(base, path) {
+          const selfRoot = getSelfRoot();
+
           if (path.startsWith("/")) path = path.slice(1);
 
-          return root + path;
+          if (base === "__self__") {
+            return selfRoot + path;
+          }
+
+          const u = new URL(selfRoot + path);
+          u.searchParams.set("monitor", String(base));
+          return u.toString();
         }
 
         async function apiJson(base, path, timeoutMs = 5000) {

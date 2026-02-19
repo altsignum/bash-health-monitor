@@ -125,6 +125,67 @@ json_escape() {
   printf '%s' "$s"
 }
 
+url_decode() {
+  local s="${1//+/ }"
+  printf '%b' "${s//%/\\x}"
+}
+
+get_query_param() {
+  local target="$1"
+  local key="$2"
+
+  if [[ "$target" != *\?* ]]; then
+    printf '%s' ""
+    return 0
+  fi
+
+  local qs="${target#*\?}"
+  local raw
+  raw="$(printf '%s' "$qs" \
+    | tr '&' '\n' \
+    | sed -n "s/^${key}=//p" \
+    | head -n1 || true)"
+
+  if [[ -z "$raw" ]]; then
+    printf '%s' ""
+    return 0
+  fi
+
+  url_decode "$raw"
+}
+
+proxy_request() {
+  local monitor="$1"
+  local path="$2"
+  local service="$3"
+
+  if ! command -v curl >/dev/null 2>&1; then
+    http_json "501 Not Implemented" '{"error":"curl is required for monitor proxy"}'
+    return 0
+  fi
+
+  local base="${monitor%/}"
+  local url="${base}${path}"
+
+  if [[ "$path" == "/status" || "$path" == "/errors" ]]; then
+    url="${url}?service=${service}"
+  fi
+
+  local body http_code
+  body="$(curl -fsS --max-time 5 "$url" 2>/dev/null || true)"
+  http_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "$url" 2>/dev/null || true)"
+
+  case "$http_code" in
+    200) http_json "200 OK" "$body" ;;
+    400) http_json "400 Bad Request" "$body" ;;
+    404) http_json "404 Not Found" "$body" ;;
+    000|"") http_json "502 Bad Gateway" '{"error":"monitor request failed"}' ;;
+    *) http_json "502 Bad Gateway" '{"error":"monitor returned non-OK status"}' ;;
+  esac
+
+  return 0
+}
+
 get_list_json() {
   local file="$1"
   local -a items=()
@@ -147,13 +208,11 @@ get_list_json() {
 }
 
 handle_conn() {
-  local req_line method target path service line
+  local req_line method target path service monitor line
   IFS= read -r req_line || return 0
   method="${req_line%% *}"
   target="${req_line#* }"; target="${target%% *}"
   path="${target%%\?*}"
-  service="${target##*service=}"
-  service="${service%%&*}"
 
   while IFS= read -r line; do
     [[ "$line" == $'\r' || -z "$line" ]] && break
@@ -164,13 +223,21 @@ handle_conn() {
     return 0
   fi
 
+  monitor="$(get_query_param "$target" "monitor")"
+  service="$(get_query_param "$target" "service")"
+
+  if [[ -n "$monitor" && "$path" != "" && "$path" != "/" ]]; then
+    proxy_request "$monitor" "$path" "$service"
+    return 0
+  fi
+
   local needs_service=0
   case "$path" in
     /status|/errors) needs_service=1 ;;
   esac
 
   if [[ "$needs_service" -eq 1 ]]; then
-    if [[ -z "$service" || "$service" == "$target" ]]; then
+    if [[ -z "$service" ]]; then
       http_json "400 Bad Request" '{"error":"bad request"}'
       return 0
     fi
