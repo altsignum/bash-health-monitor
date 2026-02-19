@@ -1,5 +1,21 @@
 # Health Monitor
 
+Health Monitor is a lightweight systemd-based service health dashboard
+implemented as a Bash HTTP server with socket activation.
+
+It provides real-time health status for selected systemd units,
+analyzes journal logs since last activation, and exposes a minimal JSON API
+for integration or aggregation across multiple nodes.
+
+Designed for Debian-based Linux systems with:
+- systemd
+- journalctl
+- iproute2
+- bash
+
+The server uses systemd socket activation and does not require
+a separate web server or runtime environment.
+
 ## Monitored Service Requirements
 
 * Must be a `systemd` service  
