@@ -1,0 +1,9 @@
+[Unit]
+Description=Health API Service (per-connection)
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/health
+ExecStart=/var/www/health/health.sh
+StandardInput=socket
+StandardOutput=socket

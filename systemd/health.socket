@@ -1,0 +1,11 @@
+[Unit]
+Description=Health API Socket
+
+[Socket]
+ListenStream=60100
+Accept=yes
+NoDelay=true
+Service=health@.service
+
+[Install]
+WantedBy=sockets.target
