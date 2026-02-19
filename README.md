@@ -82,13 +82,20 @@ Base URL: http://{host}:{port}
     Response example:
     ```json
     {
-        "status": "stable"
+        "status": "stopped"
+    }
+    ```
+    ```json
+    {
+        "status": "stable",
+        "activeEnterTimestamp": "Wed 2026-01-15 14:23:41 UTC"
     }
     ```
     ```json
     {
         "status": "unstable",
-        "errorCount": 10
+        "errorCount": 10,
+        "activeEnterTimestamp": "Wed 2026-01-15 14:23:41 UTC"
     }
     ```
 

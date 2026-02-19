@@ -16,7 +16,19 @@ get_file_lines() {
 
 get_service_status() {
   local service="$1"
-  systemctl show "$service" -p ActiveState -p SubState
+  local line key val
+
+  systemctl show "$service" \
+    -p ActiveState \
+    -p SubState \
+    -p ActiveEnterTimestamp \
+    2>/dev/null \
+    | while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        key="${line%%=*}"
+        val="${line#*=}"
+        printf '%s=%q\n' "$key" "$val"
+      done
 }
 
 get_service_errors_since_last_activation() {
@@ -42,7 +54,7 @@ get_service_error_count_since_last_activation() {
 get_service_health() {
   local service="$1"
 
-  local ActiveState SubState
+  local ActiveState SubState ActiveEnterTimestamp
   eval "$(get_service_status "$service")"
 
   local Status
@@ -62,12 +74,14 @@ get_service_health() {
   if [[ "$SubState" == "exited" ]]; then
     Status="completed"
     printf 'Status=%q\n' "$Status"
+    printf 'ActiveEnterTimestamp=%q\n' "${ActiveEnterTimestamp:-}"
     return 0
   fi
 
   if [[ "$SubState" != "running" ]]; then
     Status="transition"
     printf 'Status=%q\n' "$Status"
+    printf 'ActiveEnterTimestamp=%q\n' "${ActiveEnterTimestamp:-}"
     return 0
   fi
 
@@ -77,12 +91,14 @@ get_service_health() {
   if [[ "$err_count" -eq 0 ]]; then
     Status="stable"
     printf 'Status=%q\n' "$Status"
+    printf 'ActiveEnterTimestamp=%q\n' "${ActiveEnterTimestamp:-}"
     return 0
   fi
 
   Status="unstable"
   printf 'Status=%q\n' "$Status"
   printf 'ErrorCount=%q\n' "$err_count"
+  printf 'ActiveEnterTimestamp=%q\n' "${ActiveEnterTimestamp:-}"
   return 0
 }
 
@@ -277,13 +293,20 @@ handle_conn() {
       http_json "200 OK" "{\"host\":\"$(json_escape "$ip")\"}"
       ;;
     /status)
-      local Status ErrorCount
+      local Status ErrorCount ActiveEnterTimestamp
       eval "$(get_service_health "$service")"
 
+      local ts_json=""
+      if [[ -n "${ActiveEnterTimestamp:-}" ]]; then
+        ts_json=",\"activeEnterTimestamp\":\"$(json_escape "$ActiveEnterTimestamp")\""
+      fi
+
       if [[ -n "${ErrorCount:-}" ]]; then
-        http_json "200 OK" "{\"status\":\"$(json_escape "$Status")\",\"errorCount\":$ErrorCount}"
+        http_json "200 OK" \
+          "{\"status\":\"$(json_escape "$Status")\",\"errorCount\":$ErrorCount$ts_json}"
       else
-        http_json "200 OK" "{\"status\":\"$(json_escape "$Status")\"}"
+        http_json "200 OK" \
+          "{\"status\":\"$(json_escape "$Status")\"$ts_json}"
       fi
       ;;
     /errors)

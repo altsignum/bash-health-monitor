@@ -264,13 +264,14 @@
             <tr>
               <th>Service</th>
               <th>Status</th>
+              <th>Active Since</th>
               <th>Host</th>
               <th>Details</th>
             </tr>
           </thead>
           <tbody id="rows">
             <tr>
-              <td class="loading-cell" colspan="4">
+              <td class="loading-cell" colspan="5">
                 <div class="loading">
                   <span class="spinner" aria-hidden="true"></span>
                   <span>Loading...</span>
@@ -368,10 +369,33 @@
           document.body.removeChild(ta);
         }
 
+        function normalizeSystemctlTimestamp(ts) {
+          const s = String(ts || "").trim();
+          if (!s) return "";
+          return s
+            .replace(/\bMSK\b/g, "GMT+0300")
+            .replace(/\bUTC\b/g, "GMT+0000");
+        }
+
+        function formatActiveSince(ts) {
+          const raw = String(ts || "").trim();
+          if (!raw) return `<span class="muted">--</span>`;
+
+          const normalized = normalizeSystemctlTimestamp(raw);
+          const d = new Date(normalized);
+
+          if (Number.isNaN(d.getTime())) {
+            return `<span class="muted">${escapeHtml(raw)}</span>`;
+          }
+
+          return `<span class="muted">${escapeHtml(d.toLocaleString())}</span>`;
+        }
+
         function renderRow(item) {
           const name = escapeHtml(item.name);
           const status = escapeHtml(item.status);
           const host = escapeHtml(item.host);
+          const activeSince = formatActiveSince(item.activeEnterTimestamp);
 
           const details = item.status === "unstable" &&
             typeof item.errorCount === "number"
@@ -395,6 +419,7 @@
                 </div>
               </td>
               <td><span class="badge ${status}">${status}</span></td>
+              <td>${activeSince}</td>
               <td class="muted">
                 <span class="copy"
                   title="Click to copy"
@@ -541,6 +566,11 @@
                 host: monitorHost,
                 base: monitorBase
               };
+
+              if (typeof st.activeEnterTimestamp === "string" &&
+                  st.activeEnterTimestamp.trim()) {
+                row.activeEnterTimestamp = st.activeEnterTimestamp;
+              }
 
               if (status === "unstable" &&
                   typeof st.errorCount === "number") {
