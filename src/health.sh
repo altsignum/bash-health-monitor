@@ -279,7 +279,7 @@ get_list_json() {
 }
 
 handle_conn() {
-  local req_line method target path service monitor line
+  local req_line method target path line
   IFS= read -r req_line || return 0
   method="${req_line%% *}"
   target="${req_line#* }"; target="${target%% *}"
@@ -295,15 +295,13 @@ handle_conn() {
     return 0
   fi
 
-  monitor="$(get_query_param "$target" "monitor")"
-
+  local monitor="$(get_query_param "$target" "monitor")"
   if [[ -n "$monitor" && "$path" != "" && "$path" != "/" ]]; then
     proxy_request "$monitor" "$target"
     return 0
   fi
 
-  service="$(get_query_param "$target" "service")"
-
+  local service="$(get_query_param "$target" "service")"
   local needs_service=0
   case "$path" in
     /status|/errors) needs_service=1 ;;
@@ -350,27 +348,26 @@ handle_conn() {
       printf "$(get_list_json "monitors.list")"
       ;;
     /host)
-      local ip
-      ip="$(get_external_ip)"
+      local host="$(get_external_ip)"
       printf_headers
-      printf "{\"host\":\"$(json_escape "$ip")\"}"
+      printf '{"host":"%s"}' "$(json_escape "$host")"
       ;;
     /status)
+      local host="$(get_external_ip)"
       local Status ErrorCount ActiveEnterTimestamp
       eval "$(get_service_health "$service")"
 
-      local ts_json=""
+      printf_headers
+      printf '{'
+      printf '"status":"%s",' "$(json_escape "$Status")"
       if [[ -n "${ActiveEnterTimestamp:-}" ]]; then
-        ts_json=",\"activeEnterTimestamp\":\"$(ctime_to_json_date "$ActiveEnterTimestamp")\""
+        printf '"activeSince":"%s",' "$(ctime_to_json_date "$ActiveEnterTimestamp")"
       fi
-
       if [[ -n "${ErrorCount:-}" ]]; then
-        printf_headers
-        printf "{\"status\":\"$(json_escape "$Status")\",\"errorCount\":$ErrorCount$ts_json}"
-      else
-        printf_headers
-        printf "{\"status\":\"$(json_escape "$Status")\"$ts_json}"
+        printf '"errorCount":%s,' $ErrorCount
       fi
+      printf '"host":"%s"' "$(json_escape "$host")"
+      printf '}'
       ;;
     /errors)
       local format="$(get_query_param "$target" "format")"

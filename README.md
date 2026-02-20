@@ -82,28 +82,31 @@ Base URL: http://{host}:{port}
     Response example:
     ```json
     {
-        "status": "stopped"
+        "status": "stopped",
+        "host": "203.0.113.25"
     }
     ```
     ```json
     {
         "status": "stable",
-        "activeEnterTimestamp": "Wed 2026-01-15 14:23:41 UTC"
+        "activeSince": "Wed 2026-01-15 14:23:41 UTC",
+        "host": "203.0.113.25"
     }
     ```
     ```json
     {
         "status": "unstable",
         "errorCount": 10,
-        "activeEnterTimestamp": "Wed 2026-01-15 14:23:41 UTC"
+        "activeSince": "Wed 2026-01-15 14:23:41 UTC",
+        "host": "203.0.113.25"
     }
     ```
 
-* GET /errors?service={name}[&format=txt]  
+* GET /errors?service={name}[&format=text]  
     Returns error log blocks (`ERROR`, `FATAL`) since last activation.  
     - `format` — response format:
         - `json` (default) — JSON array of log blocks
-        - `txt` — plain text stream (recommended for large outputs)
+        - `text` — plain text stream (recommended for large outputs)
     Response example:
     ```json
     [

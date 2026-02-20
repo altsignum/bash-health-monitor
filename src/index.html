@@ -373,8 +373,8 @@
           const name = escapeHtml(item.name);
           const status = escapeHtml(item.status);
           const host = escapeHtml(item.host);
-          const timestamp = item.activeEnterTimestamp
-            ? new Date(item.activeEnterTimestamp).toLocaleString()
+          const timestamp = item.activeSince
+            ? new Date(item.activeSince).toLocaleString()
             : '--';
           const activeSince = `<span class="muted">${timestamp}</span>`;
 
@@ -499,9 +499,9 @@
                 base: monitorBase
               };
 
-              if (typeof st.activeEnterTimestamp === "string" &&
-                  st.activeEnterTimestamp.trim()) {
-                row.activeEnterTimestamp = st.activeEnterTimestamp;
+              if (typeof st.activeSince === "string" &&
+                  st.activeSince.trim()) {
+                row.activeSince = st.activeSince;
               }
 
               if (status === "unstable" &&
