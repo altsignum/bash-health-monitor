@@ -310,6 +310,20 @@ handle_conn() {
       fi
       ;;
     /errors)
+      local format
+      format="$(get_query_param "$target" "format")"
+
+      if [[ "$format" == "text" ]]; then
+        printf 'HTTP/1.1 200 OK\r\n'
+        printf 'Content-Type: text/plain; charset=utf-8\r\n'
+        printf 'Connection: close\r\n'
+        printf '\r\n'
+
+        get_service_errors_since_last_activation "$service" \
+          | awk 'BEGIN{RS="\036"; ORS="\n\n"} NF{print}'
+        return 0
+      fi
+
       local -a blocks=()
       local block out first=1
 

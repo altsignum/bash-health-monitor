@@ -399,10 +399,8 @@
 
           const details = item.status === "unstable" &&
             typeof item.errorCount === "number"
-            ? `<a href="errors?service=${item.name}"
-                data-action="open-errors"
-                data-host="${item.base}"
-                data-service="${name}">
+            ? `<a href="errors?service=${item.name}&format=text"
+                target="_blank">
                 Errors (${item.errorCount})
               </a>`
             : `<span class="muted">--</span>`;
@@ -443,51 +441,6 @@
           $refreshBtn.disabled = flag;
           $refreshIcon.classList.toggle("spin", flag);
         }
-
-        /* ===================== Errors ===================== */
-
-        async function openErrorsInNewTab(base, service) {
-          const data = await apiJson(
-            base,
-            `/errors?service=${encodeURIComponent(service)}`
-          );
-
-          const blocks = Array.isArray(data) ? data : [];
-          const text = blocks.join("\n\n") + (blocks.length ? "\n" : "");
-
-          const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-          const blobUrl = URL.createObjectURL(blob);
-
-          window.open(blobUrl, "_blank", "noopener,noreferrer");
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
-        }
-
-        $rows.addEventListener("click", (e) => {
-          const copyEl = e.target && e.target.closest
-            ? e.target.closest("[data-action=\"copy\"][data-copy]")
-            : null;
-
-          if (copyEl) {
-            e.preventDefault();
-            const text = copyEl.getAttribute("data-copy") || "";
-            copyText(text).catch(() => {});
-            return;
-          }
-
-          const a = e.target && e.target.closest
-            ? e.target.closest("a[data-action=\"open-errors\"]")
-            : null;
-
-          if (!a) return;
-
-          e.preventDefault();
-
-          const base = a.getAttribute("data-host") || "";
-          const service = a.getAttribute("data-service") || "";
-          if (!base || !service) return;
-
-          openErrorsInNewTab(base, service).catch(() => {});
-        });
 
         /* ===================== Data loading ===================== */
 

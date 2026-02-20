@@ -99,14 +99,24 @@ Base URL: http://{host}:{port}
     }
     ```
 
-* GET /errors?service={name}  
-    Returns error log blocks since last activation.
+* GET /errors?service={name}[&format=txt]  
+    Returns error log blocks (`ERROR`, `FATAL`) since last activation.  
+    - `format` — response format:
+        - `json` (default) — JSON array of log blocks
+        - `txt` — plain text stream (recommended for large outputs)
     Response example:
     ```json
     [
         "2026-02-17 08:29:06.2641|ERROR|Database failed",
         "2026-02-17 08:30:10.1001|FATAL|Crash detected"
     ]
+    ```
+    Response example (`format=text`):
+    ```text
+    2026-02-17 08:29:06.2641|ERROR|Database failed
+
+
+    2026-02-17 08:30:10.1001|FATAL|Crash detected
     ```
 
 ### Proxy mode (monitor={url})
