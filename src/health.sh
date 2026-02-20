@@ -324,6 +324,7 @@ printf_file_list() {
 
 printf_service_status() {
   local service=$1
+  local monitor="${2:-}"
 
   local host="$(get_external_ip)"
   local Status ErrorCount ActiveEnterTimestamp
@@ -338,7 +339,12 @@ printf_service_status() {
   if [[ -n "${ErrorCount:-}" ]]; then
     printf '"errorCount":%s,' $ErrorCount
   fi
-  printf '"host":"%s"' "$(json_escape "$host")"
+  printf '"host":"%s",' "$(json_escape "$host")"
+  if [[ -z "$monitor" ]]; then
+    printf '"monitor":null'
+  else
+    printf '"monitor":"%s"' "$(json_escape "$monitor")"
+  fi
   printf '}'
 }
 
@@ -519,7 +525,7 @@ handle_conn() {
         [[ -z "$service" ]] && continue
         (( first )) || printf ','
         first=0
-        printf_service_status "$service"
+        printf_service_status "$service" "$ref"
       done < <(get_file_lines "services.list")
       printf '],'
 
