@@ -368,9 +368,7 @@ handle_conn() {
       fi
       ;;
     /errors)
-      local format
-      format="$(get_query_param "$target" "format")"
-
+      local format="$(get_query_param "$target" "format")"
       if [[ "$format" == "text" ]]; then
         printf_headers 200 'text/plain; charset=utf-8'
         get_service_errors_since_last_activation "$service" \
@@ -378,24 +376,16 @@ handle_conn() {
         return 0
       fi
 
-      local -a blocks=()
-      local block out first=1
-
+      local block first=1
+      printf_headers 200 'application/json'
+      printf '['
       while IFS= read -r -d $'\036' block || [[ -n "$block" ]]; do
         [[ -z "$block" ]] && continue
-        blocks+=("$(json_escape "$block")")
-      done < <(get_service_errors_since_last_activation "$service" || true)
-
-      out='['
-      for block in "${blocks[@]}"; do
-        (( first )) || out+=','
+        (( first )) || printf ','
         first=0
-        out+="\"$block\""
-      done
-      out+=']'
-
-      printf_headers
-      printf "$out"
+        printf '"%s"' "$(json_escape "$block")"
+      done < <(get_service_errors_since_last_activation "$service" || true)
+      printf ']'
       ;;
     *)
       printf_headers 404
