@@ -121,15 +121,30 @@ get_external_ip() {
   printf '%s' "$ip"
 }
 
-http_json() {
-  local status="$1"
-  local body="$2"
+expand_http_status() {
+  local code="${1:-200}"
+
+  case "$code" in
+    200) printf "200 OK" ;;
+    400) printf "400 Bad Request" ;;
+    404) printf "404 Not Found" ;;
+    501) printf "501 Not Implemented" ;;
+    502) printf "502 Bad Gateway" ;;
+    *)
+      echo "Unknown status code $code" >&2
+      return 1
+    ;;
+  esac
+}
+
+printf_headers() {
+  local status="$(expand_http_status "${1:-}")" || return 1
+  local content="${2:-application/json}"
 
   printf 'HTTP/1.1 %s\r\n' "$status"
-  printf 'Content-Type: application/json\r\n'
+  printf 'Content-Type: %s\r\n' "$content"
   printf 'Connection: close\r\n'
   printf '\r\n'
-  printf '%s' "$body"
 }
 
 json_escape() {
@@ -217,8 +232,8 @@ proxy_request() {
   local target="$2"
 
   if ! command -v curl >/dev/null 2>&1; then
-    http_json "501 Not Implemented" \
-      '{"error":"curl is required for monitor proxy"}'
+    printf_headers 501
+    printf '{"error":"curl is required for monitor proxy"}'
     return 0
   fi
 
@@ -232,7 +247,8 @@ proxy_request() {
     return 0
   fi
 
-  http_json "502 Bad Gateway" '{"error":"monitor request failed"}'
+  printf_headers 502
+  printf '{"error":"monitor request failed"}'
   return 0
 }
 
@@ -269,7 +285,8 @@ handle_conn() {
   done
 
   if [[ "$method" != "GET" ]]; then
-    http_json "400 Bad Request" '{"error":"bad request"}'
+    printf_headers 400
+    printf '{"error":"bad request"}'
     return 0
   fi
 
@@ -289,12 +306,14 @@ handle_conn() {
 
   if [[ "$needs_service" -eq 1 ]]; then
     if [[ -z "$service" ]]; then
-      http_json "400 Bad Request" '{"error":"bad request"}'
+      printf_headers 400
+      printf '{"error":"service must be specified"}'
       return 0
     fi
 
     if [[ "$(systemctl show "$service" -p LoadState --value 2>/dev/null)" == "not-found" ]]; then
-      http_json "404 Not Found" '{"error":"service not found"}'
+      printf_headers 404
+      printf '{"error":"service not found"}'
       return 0
     fi
   fi
@@ -313,19 +332,23 @@ handle_conn() {
         printf '\r\n'
         cat "$file"
       else
-        http_json "404 Not Found" '{"error":"index.html not exists"}'
+        printf_headers 404
+        printf '{"error":"index.html not exists"}'
       fi
       ;;
     /list)
-      http_json "200 OK" "$(get_list_json "services.list")"
+      printf_headers
+      printf "$(get_list_json "services.list")"
       ;;
     /monitors)
-      http_json "200 OK" "$(get_list_json "monitors.list")"
+      printf_headers
+      printf "$(get_list_json "monitors.list")"
       ;;
     /host)
       local ip
       ip="$(get_external_ip)"
-      http_json "200 OK" "{\"host\":\"$(json_escape "$ip")\"}"
+      printf_headers
+      printf "{\"host\":\"$(json_escape "$ip")\"}"
       ;;
     /status)
       local Status ErrorCount ActiveEnterTimestamp
@@ -337,11 +360,11 @@ handle_conn() {
       fi
 
       if [[ -n "${ErrorCount:-}" ]]; then
-        http_json "200 OK" \
-          "{\"status\":\"$(json_escape "$Status")\",\"errorCount\":$ErrorCount$ts_json}"
+        printf_headers
+        printf "{\"status\":\"$(json_escape "$Status")\",\"errorCount\":$ErrorCount$ts_json}"
       else
-        http_json "200 OK" \
-          "{\"status\":\"$(json_escape "$Status")\"$ts_json}"
+        printf_headers
+        printf "{\"status\":\"$(json_escape "$Status")\"$ts_json}"
       fi
       ;;
     /errors)
@@ -349,11 +372,7 @@ handle_conn() {
       format="$(get_query_param "$target" "format")"
 
       if [[ "$format" == "text" ]]; then
-        printf 'HTTP/1.1 200 OK\r\n'
-        printf 'Content-Type: text/plain; charset=utf-8\r\n'
-        printf 'Connection: close\r\n'
-        printf '\r\n'
-
+        printf_headers 200 'text/plain; charset=utf-8'
         get_service_errors_since_last_activation "$service" \
           | awk 'BEGIN{RS="\036"; ORS="\n\n"} NF{print}'
         return 0
@@ -375,10 +394,12 @@ handle_conn() {
       done
       out+=']'
 
-      http_json "200 OK" "$out"
+      printf_headers
+      printf "$out"
       ;;
     *)
-      http_json "404 Not Found" '{"error":"not found"}'
+      printf_headers 404
+      printf '{"error":"not found"}'
       ;;
   esac
 }
