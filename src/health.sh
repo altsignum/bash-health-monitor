@@ -166,95 +166,24 @@ ctime_to_json_date() {
   date -u -d "$input" +"%Y-%m-%dT%H:%M:%SZ"
 }
 
-get_query_param() {
+parse_query_params() {
   local target="$1"
-  local key="$2"
+  local qs pair k v
 
-  if [[ "$target" != *\?* ]]; then
-    printf '%s' ""
-    return 0
-  fi
+  declare -gA query=()
 
-  local qs="${target#*\?}"
-  local raw
-  raw="$(printf '%s' "$qs" \
-    | tr '&' '\n' \
-    | sed -n "s/^${key}=//p" \
-    | head -n1 || true)"
+  [[ "$target" == *\?* ]] || return 0
+  qs="${target#*\?}"
 
-  if [[ -z "$raw" ]]; then
-    printf '%s' ""
-    return 0
-  fi
-
-  url_decode "$raw"
-}
-
-strip_query_param() {
-  local target="$1"
-  local key="$2"
-
-  if [[ "$target" != *\?* ]]; then
-    printf '%s' "$target"
-    return 0
-  fi
-
-  local path="${target%%\?*}"
-  local qs="${target#*\?}"
-
-  local -a keep=()
-  local part k
-  while IFS= read -r part; do
-    [[ -z "$part" ]] && continue
-    k="${part%%=*}"
-    if [[ "$k" == "$key" ]]; then
-      continue
-    fi
-    keep+=("$part")
-  done < <(printf '%s' "$qs" | tr '&' '\n')
-
-  if [[ "${#keep[@]}" -eq 0 ]]; then
-    printf '%s' "$path"
-    return 0
-  fi
-
-  local out="${path}?"
-  local first=1
-  for part in "${keep[@]}"; do
-    if (( first )); then
-      first=0
-    else
-      out+="&"
-    fi
-    out+="$part"
-  done
-
-  printf '%s' "$out"
-}
-
-proxy_request() {
-  local monitor="$1"
-  local target="$2"
-
-  if ! command -v curl >/dev/null 2>&1; then
-    printf_headers 501
-    printf '{"error":"curl is required for monitor proxy"}'
-    return 0
-  fi
-
-  local base="${monitor%/}"
-  local cleaned
-  cleaned="$(strip_query_param "$target" "monitor")"
-
-  local url="${base}${cleaned}"
-
-  if curl -sS --max-time 15 --http1.1 -i "$url"; then
-    return 0
-  fi
-
-  printf_headers 502
-  printf '{"error":"monitor request failed"}'
-  return 0
+  while IFS='&' read -r -a pairs; do
+    for pair in "${pairs[@]}"; do
+      [[ -n "$pair" ]] || continue
+      k="${pair%%=*}"
+      v=""
+      [[ "$pair" == *"="* ]] && v="${pair#*=}"
+      query["$k"]="$(url_decode "$v")"
+    done
+  done <<< "$qs"
 }
 
 get_list_json() {
@@ -284,6 +213,7 @@ handle_conn() {
   method="${req_line%% *}"
   target="${req_line#* }"; target="${target%% *}"
   path="${target%%\?*}"
+  parse_query_params "$target"
 
   while IFS= read -r line; do
     [[ "$line" == $'\r' || -z "$line" ]] && break
@@ -295,13 +225,22 @@ handle_conn() {
     return 0
   fi
 
-  local monitor="$(get_query_param "$target" "monitor")"
+  local monitor="${query[monitor]:-}"
   if [[ -n "$monitor" && "$path" != "" && "$path" != "/" ]]; then
-    proxy_request "$monitor" "$target"
-    return 0
+    local url="${monitor}${path}"
+    local querySeparator='?'
+    local param
+
+    for param in "${!query[@]}"; do
+      [[ "$param" == "monitor" ]] && continue
+      url+="${querySeparator}${param}=${query[$param]}"
+      querySeparator='&'
+    done
+
+    exec curl -sS -D - "$url"
   fi
 
-  local service="$(get_query_param "$target" "service")"
+  local service="${query[service]:-}"
   local needs_service=0
   case "$path" in
     /status|/errors) needs_service=1 ;;
@@ -370,7 +309,7 @@ handle_conn() {
       printf '}'
       ;;
     /errors)
-      local format="$(get_query_param "$target" "format")"
+      local format="${query[format]:-}"
       if [[ "$format" == "text" ]]; then
         printf_headers 200 'text/plain; charset=utf-8'
         get_service_errors_since_last_activation "$service" \
