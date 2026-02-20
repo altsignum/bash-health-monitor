@@ -380,7 +380,7 @@
 
           const details = item.status === "unstable" &&
             typeof item.errorCount === "number"
-            ? `<a href="errors?service=${item.name}&format=text"
+            ? `<a href="errors?service=${encodeURIComponent(item.name)}${item.monitor ? `&monitor=${encodeURIComponent(item.monitor)}` : ''}&format=text"
                 target="_blank">
                 Errors (${item.errorCount})
               </a>`
@@ -496,7 +496,7 @@
                 name: svc,
                 status,
                 host: monitorHost,
-                base: monitorBase
+                monitor: monitorBase === self ? null : monitorBase
               };
 
               if (typeof st.activeSince === "string" &&
