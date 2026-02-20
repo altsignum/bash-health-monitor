@@ -423,108 +423,47 @@
           $refreshIcon.classList.toggle("spin", flag);
         }
 
-        /* ===================== Data loading ===================== */
-
-        async function loadData() {
-          const self = "__self__";
-
-          const uniq = (arr) => {
-            const seen = new Set();
-            const out = [];
-            for (const x of arr) {
-              const v = String(x || "").trim().replace(/\/+$/, "");
-              if (!v) continue;
-              if (seen.has(v)) continue;
-              seen.add(v);
-              out.push(v);
-            }
-            return out;
-          };
-
-          let external = [];
-          try {
-            external = await apiJson(self, "/monitors", 4000);
-            if (!Array.isArray(external)) external = [];
-          } catch {
-            external = [];
-          }
-
-          const monitors = uniq([self, ...external]);
-
-          const hostByMonitor = new Map();
-          for (const monitorBase of monitors) {
-            try {
-              const hostRes = await apiJson(monitorBase, "/host", 4000);
-              const hostValue = hostRes && typeof hostRes.host === "string"
-                ? hostRes.host
-                : "";
-              hostByMonitor.set(monitorBase, hostValue || "");
-            } catch {
-              hostByMonitor.set(monitorBase, "");
-            }
-          }
-
-          const items = [];
-
-          for (const monitorBase of monitors) {
-            let services = [];
-            try {
-              services = await apiJson(monitorBase, "/list", 4000);
-              if (!Array.isArray(services)) services = [];
-            } catch {
-              services = [];
-            }
-
-            const monitorHost = hostByMonitor.get(monitorBase) || "";
-
-            for (const svc of services) {
-              let st = { status: "failed" };
-
-              try {
-                st = await apiJson(
-                  monitorBase,
-                  `/status?service=${encodeURIComponent(svc)}`,
-                  5000
-                );
-              } catch {
-                st = { status: "failed" };
-              }
-
-              const status = String(st.status || "failed");
-
-              const row = {
-                name: svc,
-                status,
-                host: monitorHost,
-                monitor: monitorBase === self ? null : monitorBase
-              };
-
-              if (typeof st.activeSince === "string" &&
-                  st.activeSince.trim()) {
-                row.activeSince = st.activeSince;
-              }
-
-              if (status === "unstable" &&
-                  typeof st.errorCount === "number") {
-                row.errorCount = st.errorCount;
-              }
-
-              items.push(row);
-            }
-          }
-
-          return items;
-        }
-
         /* ===================== Refresh ===================== */
+
+        function flattenServices(root) {
+          const result = [];
+
+          function walk(node, path) {
+            if (!node) return;
+
+            if (Array.isArray(node.services)) {
+              for (const svc of node.services) {
+                result.push({
+                  ...svc,
+                  path: [...path]
+                });
+              }
+            }
+
+            if (Array.isArray(node.monitors)) {
+              for (const monitor of node.monitors) {
+                const nextPath = monitor.name != null
+                  ? [...path, monitor.name]
+                  : [...path];
+
+                walk(monitor, nextPath);
+              }
+            }
+          }
+
+          walk(root, []);
+          return result;
+        }
 
         async function refresh() {
           if (isRefreshing) return;
 
           setRefreshing(true);
           try {
-            const data = await loadData();
-            renderTable(data);
+            const self = "__self__";
+            const data = await apiJson(self, "/all", 60000);
+            const services = flattenServices(data);
+            renderTable(services);
           } finally {
             setRefreshing(false);
           }

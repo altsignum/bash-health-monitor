@@ -53,11 +53,11 @@ Base URL: http://{host}:{port}
 * GET /  
     Returns `index.html` if present.
 
-* GET /list  
-    Returns the list of monitored systemd services.  
+* GET /services  
+    Returns the list of monitored services.  
     Response example:
     ```json
-    ["nginx.service", "app.service"]
+    ["nginx", "app"]
     ```
 
 * GET /monitors  
@@ -78,7 +78,7 @@ Base URL: http://{host}:{port}
     ```
 
 * GET /status?service={name}  
-    Returns health status of a systemd service.
+    Returns health status of a service.
     Response example:
     ```json
     {
@@ -99,6 +99,44 @@ Base URL: http://{host}:{port}
         "errorCount": 10,
         "activeSince": "Wed 2026-01-15 14:23:41 UTC",
         "host": "203.0.113.25"
+    }
+    ```
+
+* GET /all  
+    Returns aggregated health status of the current Health Monitor instance,
+    including:
+    - `services` — statuses of local monitored systemd services
+    - `monitors` — recursive results from external Health Monitor instances
+
+    The response structure is recursive: each monitor entry has the same
+    shape as the root payload.
+
+    Response example:
+    ```json
+    {
+        "name": null,
+        "services": [
+            {
+                "name": "nginx",
+                "status": "stable",
+                "activeSince": "2026-02-20T02:12:28Z",
+                "host": "203.0.113.25"
+            }
+        ],
+        "monitors": [
+            {
+                "name": "http://203.0.113.26:60100",
+                "services": [
+                    {
+                        "name": "server",
+                        "status": "stable",
+                        "activeSince": "2026-02-18T06:12:59Z",
+                        "host": "203.0.113.26"
+                    }
+                ],
+                "monitors": []
+            }
+        ]
     }
     ```
 
@@ -145,12 +183,12 @@ Examples:
 
 * Get remote service status:
     ```text
-    GET /status?service=nginx.service&monitor=http%3A%2F%2F10.0.0.5%3A60100
+    GET /status?service=nginx&monitor=http%3A%2F%2F10.0.0.5%3A60100
     ```
 
 * Get remote service errors:
     ```text
-    GET /errors?service=nginx.service&monitor=http%3A%2F%2F10.0.0.5%3A60100
+    GET /errors?service=nginx&monitor=http%3A%2F%2F10.0.0.5%3A60100
     ```
 
 Notes:

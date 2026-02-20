@@ -121,6 +121,10 @@ get_external_ip() {
   printf '%s' "$ip"
 }
 
+get_unique_identifier() {
+  cat /etc/machine-id
+}
+
 expand_http_status() {
   local code="${1:-200}"
 
@@ -145,6 +149,40 @@ printf_headers() {
   printf 'Content-Type: %s\r\n' "$content"
   printf 'Connection: close\r\n'
   printf '\r\n'
+}
+
+printf_file_list() {
+  local file="$1"
+  local item first=1
+
+  printf '['
+  while IFS= read -r item || [[ -n "$item" ]]; do
+    [[ -z "$item" ]] && continue
+    (( first )) || printf ','
+    first=0
+    printf '"%s"' "$(json_escape "$item")"
+  done < <(get_file_lines "$file")
+  printf ']'
+}
+
+printf_service_status() {
+  local service=$1
+
+  local host="$(get_external_ip)"
+  local Status ErrorCount ActiveEnterTimestamp
+  eval "$(get_service_health "$service")"
+
+  printf '{'
+  printf '"name":"%s",' "$(json_escape "$service")"
+  printf '"status":"%s",' "$(json_escape "$Status")"
+  if [[ -n "${ActiveEnterTimestamp:-}" ]]; then
+    printf '"activeSince":"%s",' "$(ctime_to_json_date "$ActiveEnterTimestamp")"
+  fi
+  if [[ -n "${ErrorCount:-}" ]]; then
+    printf '"errorCount":%s,' $ErrorCount
+  fi
+  printf '"host":"%s"' "$(json_escape "$host")"
+  printf '}'
 }
 
 json_escape() {
@@ -278,13 +316,13 @@ handle_conn() {
         printf '{"error":"index.html not exists"}'
       fi
       ;;
-    /list)
+    /services)
       printf_headers
-      printf "$(get_list_json "services.list")"
+      printf_file_list "services.list"
       ;;
     /monitors)
       printf_headers
-      printf "$(get_list_json "monitors.list")"
+      printf_file_list "monitors.list"
       ;;
     /host)
       local host="$(get_external_ip)"
@@ -292,20 +330,56 @@ handle_conn() {
       printf '{"host":"%s"}' "$(json_escape "$host")"
       ;;
     /status)
-      local host="$(get_external_ip)"
-      local Status ErrorCount ActiveEnterTimestamp
-      eval "$(get_service_health "$service")"
-
       printf_headers
+      printf_service_status $service
+      ;;
+    /all)
+      local ids="${query[ids]:-}"
+      local id="$(get_unique_identifier)"
+      if [[ ",$ids," == *",$id,"* ]]; then
+        printf_headers 204 'application/json; charset=utf-8'
+        return 0
+      fi
+      if [[ -z "$ids" ]]; then
+        ids="$id"
+      else
+        ids="$ids,$id"
+      fi
+
+      printf_headers 200 'application/json; charset=utf-8'
       printf '{'
-      printf '"status":"%s",' "$(json_escape "$Status")"
-      if [[ -n "${ActiveEnterTimestamp:-}" ]]; then
-        printf '"activeSince":"%s",' "$(ctime_to_json_date "$ActiveEnterTimestamp")"
+
+      local ref="${query[ref]:-}"
+      if [[ -z "$ref" ]]; then
+        printf '"name":null,'
+      else
+        printf '"name":"%s",' "$(json_escape "$ref")"
       fi
-      if [[ -n "${ErrorCount:-}" ]]; then
-        printf '"errorCount":%s,' $ErrorCount
-      fi
-      printf '"host":"%s"' "$(json_escape "$host")"
+
+      printf '"services":['
+      local first=1 service
+      while IFS= read -r service || [[ -n "$service" ]]; do
+        [[ -z "$service" ]] && continue
+        (( first )) || printf ','
+        first=0
+        printf_service_status "$service"
+      done < <(get_file_lines "services.list")
+      printf '],'
+
+      printf '"monitors":['
+      local first=1 monitor
+      while IFS= read -r monitor || [[ -n "$monitor" ]]; do
+        [[ -z "$monitor" ]] && continue
+        (( first )) || printf ','
+        first=0
+
+        local base="${monitor%/}"
+        local url="${base}/all?ref=$monitor&ids=$ids"
+
+        curl -sS --fail --connect-timeout 2 --max-time 60 "$url"
+      done < <(get_file_lines "monitors.list")
+      printf ']'
+
       printf '}'
       ;;
     /errors)
