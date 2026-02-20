@@ -170,35 +170,69 @@ get_query_param() {
   url_decode "$raw"
 }
 
+strip_query_param() {
+  local target="$1"
+  local key="$2"
+
+  if [[ "$target" != *\?* ]]; then
+    printf '%s' "$target"
+    return 0
+  fi
+
+  local path="${target%%\?*}"
+  local qs="${target#*\?}"
+
+  local -a keep=()
+  local part k
+  while IFS= read -r part; do
+    [[ -z "$part" ]] && continue
+    k="${part%%=*}"
+    if [[ "$k" == "$key" ]]; then
+      continue
+    fi
+    keep+=("$part")
+  done < <(printf '%s' "$qs" | tr '&' '\n')
+
+  if [[ "${#keep[@]}" -eq 0 ]]; then
+    printf '%s' "$path"
+    return 0
+  fi
+
+  local out="${path}?"
+  local first=1
+  for part in "${keep[@]}"; do
+    if (( first )); then
+      first=0
+    else
+      out+="&"
+    fi
+    out+="$part"
+  done
+
+  printf '%s' "$out"
+}
+
 proxy_request() {
   local monitor="$1"
-  local path="$2"
-  local service="$3"
+  local target="$2"
 
   if ! command -v curl >/dev/null 2>&1; then
-    http_json "501 Not Implemented" '{"error":"curl is required for monitor proxy"}'
+    http_json "501 Not Implemented" \
+      '{"error":"curl is required for monitor proxy"}'
     return 0
   fi
 
   local base="${monitor%/}"
-  local url="${base}${path}"
+  local cleaned
+  cleaned="$(strip_query_param "$target" "monitor")"
 
-  if [[ "$path" == "/status" || "$path" == "/errors" ]]; then
-    url="${url}?service=${service}"
+  local url="${base}${cleaned}"
+
+  if curl -sS --max-time 15 --http1.1 -i "$url"; then
+    return 0
   fi
 
-  local body http_code
-  body="$(curl -fsS --max-time 5 "$url" 2>/dev/null || true)"
-  http_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "$url" 2>/dev/null || true)"
-
-  case "$http_code" in
-    200) http_json "200 OK" "$body" ;;
-    400) http_json "400 Bad Request" "$body" ;;
-    404) http_json "404 Not Found" "$body" ;;
-    000|"") http_json "502 Bad Gateway" '{"error":"monitor request failed"}' ;;
-    *) http_json "502 Bad Gateway" '{"error":"monitor returned non-OK status"}' ;;
-  esac
-
+  http_json "502 Bad Gateway" '{"error":"monitor request failed"}'
   return 0
 }
 
@@ -240,12 +274,13 @@ handle_conn() {
   fi
 
   monitor="$(get_query_param "$target" "monitor")"
-  service="$(get_query_param "$target" "service")"
 
   if [[ -n "$monitor" && "$path" != "" && "$path" != "/" ]]; then
-    proxy_request "$monitor" "$path" "$service"
+    proxy_request "$monitor" "$target"
     return 0
   fi
+
+  service="$(get_query_param "$target" "service")"
 
   local needs_service=0
   case "$path" in
