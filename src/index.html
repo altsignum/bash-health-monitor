@@ -369,33 +369,14 @@
           document.body.removeChild(ta);
         }
 
-        function normalizeSystemctlTimestamp(ts) {
-          const s = String(ts || "").trim();
-          if (!s) return "";
-          return s
-            .replace(/\bMSK\b/g, "GMT+0300")
-            .replace(/\bUTC\b/g, "GMT+0000");
-        }
-
-        function formatActiveSince(ts) {
-          const raw = String(ts || "").trim();
-          if (!raw) return `<span class="muted">--</span>`;
-
-          const normalized = normalizeSystemctlTimestamp(raw);
-          const d = new Date(normalized);
-
-          if (Number.isNaN(d.getTime())) {
-            return `<span class="muted">${escapeHtml(raw)}</span>`;
-          }
-
-          return `<span class="muted">${escapeHtml(d.toLocaleString())}</span>`;
-        }
-
         function renderRow(item) {
           const name = escapeHtml(item.name);
           const status = escapeHtml(item.status);
           const host = escapeHtml(item.host);
-          const activeSince = formatActiveSince(item.activeEnterTimestamp);
+          const timestamp = item.activeEnterTimestamp
+            ? new Date(item.activeEnterTimestamp).toLocaleString()
+            : '--';
+          const activeSince = `<span class="muted">${timestamp}</span>`;
 
           const details = item.status === "unstable" &&
             typeof item.errorCount === "number"
@@ -445,8 +426,6 @@
         /* ===================== Data loading ===================== */
 
         async function loadData() {
-          await new Promise((r) => setTimeout(r, 800));
-
           const self = "__self__";
 
           const uniq = (arr) => {

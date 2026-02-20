@@ -161,6 +161,11 @@ url_decode() {
   printf '%b' "${s//%/\\x}"
 }
 
+ctime_to_json_date() {
+  local input="$1"
+  date -u -d "$input" +"%Y-%m-%dT%H:%M:%SZ"
+}
+
 get_query_param() {
   local target="$1"
   local key="$2"
@@ -356,7 +361,7 @@ handle_conn() {
 
       local ts_json=""
       if [[ -n "${ActiveEnterTimestamp:-}" ]]; then
-        ts_json=",\"activeEnterTimestamp\":\"$(json_escape "$ActiveEnterTimestamp")\""
+        ts_json=",\"activeEnterTimestamp\":\"$(ctime_to_json_date "$ActiveEnterTimestamp")\""
       fi
 
       if [[ -n "${ErrorCount:-}" ]]; then
@@ -380,7 +385,6 @@ handle_conn() {
       printf_headers 200 'application/json'
       printf '['
       while IFS= read -r -d $'\036' block || [[ -n "$block" ]]; do
-        [[ -z "$block" ]] && continue
         (( first )) || printf ','
         first=0
         printf '"%s"' "$(json_escape "$block")"
