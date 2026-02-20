@@ -1,0 +1,11 @@
+[Unit]
+Description=Health Monitor - periodic local /all sync timer
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+Unit=health-sync.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target

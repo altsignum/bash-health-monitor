@@ -1,0 +1,8 @@
+[Unit]
+Description=Health Monitor - periodic local /all sync
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/curl -fsS -o /dev/null --connect-timeout 2 --max-time 55 http://127.0.0.1:60100/all

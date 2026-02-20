@@ -244,3 +244,45 @@ Notes:
     ```
 
     `health.socket` uses socket activation and starts `health@.service` per connection.
+
+## Optional: Periodic log sync (systemd timer)
+
+Health Monitor persists detected error blocks into local files under
+`./errors/` when `/errors` (and `errorCount`) are evaluated.
+
+If the system journal rotates aggressively, old entries can disappear
+before any user or UI requests reach the monitor. In that case, the sync window
+may be lost.
+
+To ensure error blocks are captured even when nobody queries the monitor,
+you can enable a periodic local sync that calls `/all` on `127.0.0.1`.
+This triggers socket activation and updates local `./errors/*.errors`
+state on a fixed interval.
+
+5. Place the repository files:  
+    [systemd/health-sync.service](systemd/health-sync.service)  
+    [systemd/health-sync.timer](systemd/health-sync.timer)  
+
+    into:
+
+    ```
+    /etc/systemd/system/
+    ```
+
+6. Reload systemd and enable socket (autostart on boot):
+
+    ```bash
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now health-sync.timer
+    ```
+
+    `health.socket` uses socket activation and starts `health@.service` per connection.
+
+Units:
+- `health-sync.service` (oneshot)
+- `health-sync.timer` (every 15 minutes)
+
+Enable:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now health-sync.timer
