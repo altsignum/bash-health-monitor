@@ -3,6 +3,80 @@ set -euo pipefail
 
 # >> Functions
 
+ERRORS_DIR="./errors"
+
+service_to_key() {
+  local service="$1"
+  local key="$service"
+  key="${key//\//_}"
+  printf '%s' "$key"
+}
+
+ctime_to_epoch() {
+  local input="$1"
+  local out=""
+  out="$(date -u -d "$input" +%s 2>/dev/null || true)"
+  if [[ -z "$out" ]]; then
+    return 1
+  fi
+  printf '%s' "$out"
+}
+
+acquire_lock() {
+  local lock_file="$1"
+  local wait_seconds="${2:-30}"
+  local stale_seconds="${3:-60}"
+
+  local start now ts age
+  start="$(date -u +%s)"
+
+  mkdir -p "$ERRORS_DIR"
+
+  while true; do
+    now="$(date -u +%s)"
+
+    if ( set -o noclobber; printf '%s\n' "$now" > "$lock_file" ) 2>/dev/null; then
+      return 0
+    fi
+
+    ts=""
+    if [[ -f "$lock_file" ]]; then
+      ts="$(head -n1 "$lock_file" 2>/dev/null || true)"
+    fi
+
+    if [[ "$ts" =~ ^[0-9]+$ ]]; then
+      age=$(( now - ts ))
+      if (( age > stale_seconds )); then
+        rm -f "$lock_file" 2>/dev/null || true
+        continue
+      fi
+    fi
+
+    if (( now - start >= wait_seconds )); then
+      return 1
+    fi
+
+    sleep 1
+  done
+}
+
+release_lock() {
+  local lock_file="$1"
+  rm -f "$lock_file" 2>/dev/null || true
+}
+
+dedupe_errors_file() {
+  local errors_file="$1"
+  local tmp="${errors_file}.tmp"
+
+  [[ -f "$errors_file" ]] || return 0
+
+  awk 'BEGIN{RS="\036"; ORS="\036"} NF && !seen[$0]++ {print}' \
+    "$errors_file" > "$tmp"
+
+  mv -f "$tmp" "$errors_file"
+}
+
 get_file_lines() {
   local file="$1"
   local -a lines=()
@@ -22,6 +96,7 @@ get_service_status() {
     -p ActiveState \
     -p SubState \
     -p ActiveEnterTimestamp \
+    -p StateChangeTimestamp \
     2>/dev/null \
     | while IFS= read -r line; do
         [[ -z "$line" ]] && continue
@@ -38,23 +113,84 @@ get_service_errors_since_last_activation() {
   since="$(systemctl show -p ActiveEnterTimestamp --value "$service")"
 
   if [[ -z "$since" || "$since" == "n/a" ]]; then
+    since="$(systemctl show -p StateChangeTimestamp --value "$service")"
+  fi
+
+  if [[ -z "$since" || "$since" == "n/a" ]]; then
     return 0
   fi
 
-  journalctl -u "$service" --since "$since" -o cat --no-pager \
+  mkdir -p "$ERRORS_DIR"
+
+  local key
+  key="$(service_to_key "$service")"
+
+  local lock_file sync_file errors_file
+  lock_file="${ERRORS_DIR}/${key}.lock"
+  sync_file="${ERRORS_DIR}/${key}.sync"
+  errors_file="${ERRORS_DIR}/${key}.errors"
+
+  if ! acquire_lock "$lock_file" 30 60; then
+    return 1
+  fi
+
+  local since_epoch
+  if ! since_epoch="$(ctime_to_epoch "$since")"; then
+    release_lock "$lock_file"
+    return 0
+  fi
+
+  local sync_epoch_raw sync_epoch
+  sync_epoch_raw=""
+  sync_epoch=""
+  if [[ -f "$sync_file" ]]; then
+    sync_epoch_raw="$(head -n1 "$sync_file" 2>/dev/null || true)"
+  fi
+  if [[ "$sync_epoch_raw" =~ ^[0-9]+$ ]]; then
+    sync_epoch="$sync_epoch_raw"
+  fi
+
+  if [[ -n "$sync_epoch" && "$sync_epoch" -lt "$since_epoch" ]]; then
+    : > "$errors_file"
+    : > "$sync_file"
+    sync_epoch=""
+  fi
+
+  local from_epoch
+  if [[ -n "$sync_epoch" ]]; then
+    from_epoch="$sync_epoch"
+  else
+    from_epoch="$since_epoch"
+  fi
+
+  local to_epoch
+  to_epoch="$(date -u +%s)"
+
+  journalctl -u "$service" --since "@$from_epoch" -o cat --no-pager \
     | (grep -Pzo '(?ms)^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?\|(ERROR|FATAL)\|.*?(?=^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?\|[A-Z]+\||\z)' || true) \
-    | tr '\0' '\036'
+    | tr '\0' '\036' \
+    >> "$errors_file"
+
+  dedupe_errors_file "$errors_file"
+
+  printf '%s\n' "$to_epoch" > "$sync_file"
+
+  cat "$errors_file" 2>/dev/null || true
+
+  release_lock "$lock_file"
 }
 
 get_service_error_count_since_last_activation() {
   local service="$1"
-  get_service_errors_since_last_activation "$service" | tr -cd '\036' | wc -c
+  (get_service_errors_since_last_activation "$service" || true) \
+    | tr -cd '\036' \
+    | wc -c
 }
 
 get_service_health() {
   local service="$1"
 
-  local ActiveState SubState ActiveEnterTimestamp
+  local ActiveState SubState ActiveEnterTimestamp StateChangeTimestamp
   eval "$(get_service_status "$service")"
 
   local Status
@@ -66,8 +202,29 @@ get_service_health() {
   fi
 
   if [[ "$ActiveState" != "active" ]]; then
-    Status="stopped"
+    if [[ "$ActiveState" == "inactive" ]]; then
+      Status="stopped"
+      printf 'Status=%q\n' "$Status"
+      return 0
+    fi
+
+    Status="transition"
     printf 'Status=%q\n' "$Status"
+
+    if [[ -n "${ActiveEnterTimestamp:-}" && "$ActiveEnterTimestamp" != "n/a" ]]
+    then
+      printf 'ActiveEnterTimestamp=%q\n' "$ActiveEnterTimestamp"
+    elif [[ -n "${StateChangeTimestamp:-}" && "$StateChangeTimestamp" != "n/a" ]]
+    then
+      printf 'ActiveEnterTimestamp=%q\n' "$StateChangeTimestamp"
+    fi
+
+    local err_count
+    err_count="$(get_service_error_count_since_last_activation "$service")"
+    if [[ "$err_count" -gt 0 ]]; then
+      printf 'ErrorCount=%q\n' "$err_count"
+    fi
+
     return 0
   fi
 
