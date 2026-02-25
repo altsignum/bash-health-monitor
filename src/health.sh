@@ -128,6 +128,16 @@ is_unable_to_start() {
   (( now_epoch - ts_epoch < 60 ))
 }
 
+is_journal_empty() {
+  local service="$1"
+
+  if journalctl -u "$service" -n 1 --no-pager -o cat --quiet 2>/dev/null | grep -q .; then
+    return 1
+  fi
+
+  return 0
+}
+
 get_service_errors_since_last_activation() {
   local service="$1"
 
@@ -214,6 +224,13 @@ get_service_health() {
 
   local ActiveState SubState ActiveEnterTimestamp StateChangeTimestamp NRestarts
   eval "$(get_service_status "$service")"
+
+  local JournalEmpty=0
+
+  if is_journal_empty "$service"; then
+    JournalEmpty=1
+  fi
+  printf 'JournalEmpty=%q\n' "$JournalEmpty"
 
   local Status
 
@@ -360,12 +377,13 @@ printf_service_status() {
   local monitor="${2:-}"
 
   local host="$(get_external_ip)"
-  local Status RestartCount LastRestartTimestamp ErrorCount ActiveEnterTimestamp
+  local Status JournalEmpty RestartCount LastRestartTimestamp ErrorCount ActiveEnterTimestamp
   eval "$(get_service_health "$service")"
 
   printf '{'
   printf '"name":"%s",' "$(json_escape "$service")"
   printf '"status":"%s",' "$(json_escape "$Status")"
+  printf '"journalEmpty":%s,' "$([[ "${JournalEmpty:-0}" -eq 1 ]] && echo true || echo false)"
   if [[ -n "${LastRestartTimestamp:-}" ]]; then
     printf '"lastRestart":"%s",' "$(ctime_to_json_date "$LastRestartTimestamp")"
   fi

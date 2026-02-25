@@ -416,6 +416,14 @@
             );
           }
 
+          if (item.status === "stable" && item.journalEmpty === true) {
+            detailsItems.push(
+              `<div>
+                ⚠️ Journal empty
+              </div>`
+            );
+          }
+
           const details = detailsItems.length > 0
             ? detailsItems.join("")
             : `<span class="muted">--</span>`;
