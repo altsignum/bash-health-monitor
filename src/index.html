@@ -423,6 +423,19 @@
           $refreshIcon.classList.toggle("spin", flag);
         }
 
+        $rows.addEventListener("click", (e) => {
+          const copyEl = e.target && e.target.closest
+            ? e.target.closest("[data-action=\"copy\"][data-copy]")
+            : null;
+
+          if (copyEl) {
+            e.preventDefault();
+            const text = copyEl.getAttribute("data-copy") || "";
+            copyText(text).catch(() => {});
+            return;
+          }
+        });
+
         /* ===================== Refresh ===================== */
 
         function flattenServices(root) {
