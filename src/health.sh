@@ -617,7 +617,16 @@ handle_conn() {
       fi
 
       printf_headers 200 'text/plain; charset=utf-8'
-      journalctl -u "$service" -n "$n" --no-pager || true
+
+      local seen=0
+      while IFS= read -r line; do
+        seen=1
+        printf "%s\n" "$line"
+      done < <(journalctl -u "$service" -n "$n" -o cat --no-pager || true)
+
+      if [[ "$seen" -eq 0 ]]; then
+        printf "no records found\n"
+      fi
       ;;
     /status)
       printf_headers
