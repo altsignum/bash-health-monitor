@@ -416,7 +416,7 @@
             );
           }
 
-          if (item.status === "stable" && item.journalEmpty === true) {
+          if (detailsItems.length === 0 && item.status === "stable" && item.journalEmpty === true) {
             detailsItems.push(
               `<div>
                 ⚠️ Journal empty
