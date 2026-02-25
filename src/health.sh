@@ -167,7 +167,7 @@ get_service_errors_since_last_activation() {
   to_epoch="$(date -u +%s)"
 
   journalctl -u "$service" --since "@$from_epoch" -o cat --no-pager \
-    | (grep -Pzo '(?ms)^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?\|(ERROR|FATAL)\|.*?(?=^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?\|[A-Z]+\||\z)' || true) \
+    | (grep -Pzo '(?ms)^(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?\|(ERROR|FATAL)\|.*?(?=^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?\|[A-Z]+\||\z)|[^\n]*\S[^\n]*\n(?:[ \t]*at [^\n]*(?:\n|$))+)' || true) \
     | tr '\0' '\036' \
     >> "$errors_file"
 
