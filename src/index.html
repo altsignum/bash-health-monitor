@@ -146,15 +146,22 @@
       .dot.unstable { background: var(--warn); }
       .dot.failed { background: var(--bad); }
       .dot.stopped { background: var(--stopped); }
+      .dot.restarting { background: var(--bad); }
       .dot.completed { background: var(--ok); }
       .dot.transition { background: var(--warn); }
 
       .badge {
+        cursor: pointer;
         padding: 4px 10px;
         border-radius: 999px;
         font-size: 12px;
+        color: var(--text);
         border: 1px solid rgba(255,255,255,0.08);
         background: rgba(255,255,255,0.03);
+      }
+
+      .badge:hover, .badge:active {
+        text-decoration: none;
       }
 
       .badge.stable {
@@ -175,6 +182,11 @@
       .badge.stopped {
         background: rgba(100,116,139,0.10);
         border-color: rgba(100,116,139,0.35);
+      }
+
+      .badge.restarting {
+        background: rgba(239,68,68,0.10);
+        border-color: rgba(239,68,68,0.35);
       }
 
       .badge.completed {
@@ -378,12 +390,34 @@
             : '--';
           const activeSince = `<span class="muted">${timestamp}</span>`;
 
-          const details = item.status === "unstable" &&
-            typeof item.errorCount === "number"
-            ? `<a href="errors?service=${encodeURIComponent(item.name)}${item.monitor ? `&monitor=${encodeURIComponent(item.monitor)}` : ''}&format=text"
-                target="_blank">
-                Errors (${item.errorCount})
-              </a>`
+          const detailsItems = [];
+
+          if (item.status === "unstable" && typeof item.errorCount === "number") {
+            detailsItems.push(
+              `<div>
+                <a href="errors?service=${encodeURIComponent(item.name)}${item.monitor ? `&monitor=${encodeURIComponent(item.monitor)}` : ''}&format=text"
+                  target="_blank"
+                  title="Click to open errors">
+                  Errors (${item.errorCount})
+                </a>
+              </div>`
+            );
+          }
+
+          if (item.lastRestart && typeof item.restartCount === "number") {
+            detailsItems.push(
+              `<div>
+                <a href="logs?service=${encodeURIComponent(item.name)}${item.monitor ? `&monitor=${encodeURIComponent(item.monitor)}` : ''}&n=200"
+                  target="_blank"
+                  title="Click to open logs. Last restart: ${new Date(item.lastRestart).toLocaleString()}">
+                  Restarts (${item.restartCount})
+                </a>
+              </div>`
+            );
+          }
+
+          const details = detailsItems.length > 0
+            ? detailsItems.join("")
             : `<span class="muted">--</span>`;
 
           return `
@@ -397,7 +431,15 @@
                     data-copy="${name}">${name}</span>
                 </div>
               </td>
-              <td><span class="badge ${status}">${status}</span></td>
+              <td>
+                <a class="badge ${status}"
+                  href="logs?service=${encodeURIComponent(item.name)}${item.monitor ? `&monitor=${encodeURIComponent(item.monitor)}` : ''}&n=200"
+                  target="_blank"
+                  title="Click to open recent logs"
+                  >
+                  ${status}
+                </a>
+              </td>
               <td>${activeSince}</td>
               <td class="muted">
                 <span class="copy"
@@ -486,7 +528,7 @@
 
         (async function init() {
           await refresh();
-          setInterval(refresh, 60 * 1000);
+          setInterval(refresh, 300 * 1000); // every 5 minutes
         })();
       })();
     </script>

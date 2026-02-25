@@ -97,6 +97,7 @@ get_service_status() {
     -p SubState \
     -p ActiveEnterTimestamp \
     -p StateChangeTimestamp \
+    -p NRestarts \
     2>/dev/null \
     | while IFS= read -r line; do
         [[ -z "$line" ]] && continue
@@ -104,6 +105,27 @@ get_service_status() {
         val="${line#*=}"
         printf '%s=%q\n' "$key" "$val"
       done
+}
+
+is_unable_to_start() {
+  local active_enter_ts="$1"
+  local state_change_ts="$2"
+  local n_restarts="$3"
+
+  [[ "$n_restarts" =~ ^[0-9]+$ ]] || return 1
+  (( n_restarts > 1 )) || return 1
+
+  local ts="$active_enter_ts"
+  if [[ -z "$ts" || "$ts" == "n/a" ]]; then
+    ts="$state_change_ts"
+  fi
+  [[ -n "$ts" && "$ts" != "n/a" ]] || return 1
+
+  local ts_epoch now_epoch
+  ts_epoch="$(date -u -d "$ts" +%s 2>/dev/null)" || return 1
+  now_epoch="$(date -u +%s)"
+
+  (( now_epoch - ts_epoch < 60 ))
 }
 
 get_service_errors_since_last_activation() {
@@ -190,7 +212,7 @@ get_service_error_count_since_last_activation() {
 get_service_health() {
   local service="$1"
 
-  local ActiveState SubState ActiveEnterTimestamp StateChangeTimestamp
+  local ActiveState SubState ActiveEnterTimestamp StateChangeTimestamp NRestarts
   eval "$(get_service_status "$service")"
 
   local Status
@@ -198,6 +220,17 @@ get_service_health() {
   if [[ "$ActiveState" == "failed" ]]; then
     Status="failed"
     printf 'Status=%q\n' "$Status"
+    return 0
+  fi
+
+  if is_unable_to_start "${ActiveEnterTimestamp:-}" "${StateChangeTimestamp:-}" "${NRestarts:-0}"; then
+    Status="restarting"
+    printf 'Status=%q\n' "$Status"
+    printf 'RestartCount=%q\n' "$NRestarts"
+    if [[ -n "${StateChangeTimestamp:-}" && "$StateChangeTimestamp" != "n/a" ]]; then
+      printf 'LastRestartTimestamp=%q\n' "$StateChangeTimestamp"
+    fi
+
     return 0
   fi
 
@@ -327,17 +360,23 @@ printf_service_status() {
   local monitor="${2:-}"
 
   local host="$(get_external_ip)"
-  local Status ErrorCount ActiveEnterTimestamp
+  local Status RestartCount LastRestartTimestamp ErrorCount ActiveEnterTimestamp
   eval "$(get_service_health "$service")"
 
   printf '{'
   printf '"name":"%s",' "$(json_escape "$service")"
   printf '"status":"%s",' "$(json_escape "$Status")"
+  if [[ -n "${LastRestartTimestamp:-}" ]]; then
+    printf '"lastRestart":"%s",' "$(ctime_to_json_date "$LastRestartTimestamp")"
+  fi
+  if [[ -n "${RestartCount:-}" ]]; then
+    printf '"restartCount":%s,' "$RestartCount"
+  fi
   if [[ -n "${ActiveEnterTimestamp:-}" ]]; then
     printf '"activeSince":"%s",' "$(ctime_to_json_date "$ActiveEnterTimestamp")"
   fi
   if [[ -n "${ErrorCount:-}" ]]; then
-    printf '"errorCount":%s,' $ErrorCount
+    printf '"errorCount":%s,' "$ErrorCount"
   fi
   printf '"host":"%s",' "$(json_escape "$host")"
   if [[ -z "$monitor" ]]; then
@@ -444,13 +483,19 @@ handle_conn() {
   local service="${query[service]:-}"
   local needs_service=0
   case "$path" in
-    /status|/errors) needs_service=1 ;;
+    /logs|/status|/errors) needs_service=1 ;;
   esac
 
   if [[ "$needs_service" -eq 1 ]]; then
     if [[ -z "$service" ]]; then
       printf_headers 400
       printf '{"error":"service must be specified"}'
+      return 0
+    fi
+
+    if ! grep -Fxq "$service" services.list 2>/dev/null; then
+      printf_headers 404
+      printf '{"error":"service not registered"}'
       return 0
     fi
 
@@ -491,6 +536,38 @@ handle_conn() {
       local host="$(get_external_ip)"
       printf_headers
       printf '{"host":"%s"}' "$(json_escape "$host")"
+      ;;
+    /logs)
+      local n_raw="${query[n]:-}"
+      local n=""
+
+      if [[ -z "$n_raw" ]]; then
+        printf_headers 400
+        printf '{"error":"n must be specified"}'
+        return 0
+      fi
+
+      if [[ ! "$n_raw" =~ ^[0-9]+$ ]]; then
+        printf_headers 400
+        printf '{"error":"n must be an integer"}'
+        return 0
+      fi
+
+      n="$n_raw"
+      if (( n < 0 || n > 2000 )); then
+        printf_headers 400
+        printf '{"error":"n must be between 0 and 2000"}'
+        return 0
+      fi
+
+      if [[ "$(systemctl show "$service" -p LoadState --value 2>/dev/null)" == "not-found" ]]; then
+        printf_headers 404
+        printf '{"error":"service not found"}'
+        return 0
+      fi
+
+      printf_headers 200 'text/plain; charset=utf-8'
+      journalctl -u "$service" -n "$n" --no-pager || true
       ;;
     /status)
       printf_headers

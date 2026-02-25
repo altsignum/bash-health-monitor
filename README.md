@@ -25,15 +25,24 @@ a separate web server or runtime environment.
     systemctl status <service>
     ```
 
-* Must log errors in the supported format  
+* Must log errors in a supported format  
     Errors are detected from journal logs since last activation.
-    Required log format:
-    ```
-    YYYY-MM-DD HH:MM:SS(.fraction)|LEVEL|Message
-    ```
-    `LEVEL` must be:
-    - `ERROR`
-    - `FATAL`
+
+    Supported formats:
+
+    1. Structured log entries:
+       ```
+       YYYY-MM-DD HH:MM:SS(.fraction)|LEVEL|Message
+       ```
+       `LEVEL` must be:
+       - `ERROR`
+       - `FATAL`
+
+    2. .NET stack trace blocks:
+       A non-empty line followed by one or more lines that start with whitespace
+       and `at ` (typical .NET stack trace format).
+
+    Either format will be grouped and returned as an error block.
 
 * Error counting resets after service restart  
     Health is calculated from the last activation time.
@@ -41,6 +50,8 @@ a separate web server or runtime environment.
 ## Status Classification
 
 - `failed` — systemd reports failed  
+- `restarting` — service is in auto-restart state with multiple recent restarts
+  (restart loop detected)
 - `stopped` — not active  
 - `completed` — exited successfully  
 - `transition` — not running but not failed  
@@ -77,6 +88,9 @@ Base URL: http://{host}:{port}
     }
     ```
 
+* GET /logs?service={name}&n={0..2000}  
+    Returns last `n` lines from `journalctl` for the specified service.  
+
 * GET /status?service={name}  
     Returns health status of a service.
     Response example:
@@ -88,8 +102,16 @@ Base URL: http://{host}:{port}
     ```
     ```json
     {
+        "status": "restarting",
+        "restartCount": 12,
+        "lastRestart": "2026-01-15T15:23:11Z",
+        "host": "203.0.113.25"
+    }
+    ```
+    ```json
+    {
         "status": "stable",
-        "activeSince": "Wed 2026-01-15 14:23:41 UTC",
+        "activeSince": "2026-01-15T14:23:41Z",
         "host": "203.0.113.25"
     }
     ```
@@ -97,7 +119,7 @@ Base URL: http://{host}:{port}
     {
         "status": "unstable",
         "errorCount": 10,
-        "activeSince": "Wed 2026-01-15 14:23:41 UTC",
+        "activeSince": "2026-01-15T14:23:41Z",
         "host": "203.0.113.25"
     }
     ```
