@@ -172,20 +172,51 @@ get_service_errors_since_last_activation() {
     return 0
   fi
 
-  local sync_epoch_raw sync_epoch
-  sync_epoch_raw=""
+  local sync_line sync_epoch sync_nrestarts
+  sync_line=""
   sync_epoch=""
+  sync_nrestarts=""
+
   if [[ -f "$sync_file" ]]; then
-    sync_epoch_raw="$(head -n1 "$sync_file" 2>/dev/null || true)"
+    sync_line="$(head -n1 "$sync_file" 2>/dev/null || true)"
   fi
-  if [[ "$sync_epoch_raw" =~ ^[0-9]+$ ]]; then
-    sync_epoch="$sync_epoch_raw"
+
+  if [[ -n "$sync_line" ]]; then
+    local a b
+    a=""
+    b=""
+    IFS=' ' read -r a b _rest <<< "$sync_line" || true
+
+    if [[ "$a" =~ ^[0-9]+$ ]]; then
+      sync_epoch="$a"
+    fi
+    if [[ "$b" =~ ^[0-9]+$ ]]; then
+      sync_nrestarts="$b"
+    fi
+  fi
+
+  local nrestarts
+  nrestarts="$(systemctl show -p NRestarts --value "$service" 2>/dev/null || true)"
+  if [[ -z "$nrestarts" || "$nrestarts" == "n/a" || ! "$nrestarts" =~ ^[0-9]+$ ]]; then
+    nrestarts="0"
   fi
 
   if [[ -n "$sync_epoch" && "$sync_epoch" -lt "$since_epoch" ]]; then
-    : > "$errors_file"
-    : > "$sync_file"
-    sync_epoch=""
+    local should_clear
+    should_clear="1"
+
+    if [[ -n "$sync_nrestarts" ]]; then
+      if [[ "$nrestarts" -ne "$sync_nrestarts" ]]; then
+        should_clear="0"
+      fi
+    fi
+
+    if [[ "$should_clear" == "1" ]]; then
+      : > "$errors_file"
+      : > "$sync_file"
+      sync_epoch=""
+      sync_nrestarts=""
+    fi
   fi
 
   local from_epoch
@@ -205,7 +236,8 @@ get_service_errors_since_last_activation() {
 
   dedupe_errors_file "$errors_file"
 
-  printf '%s\n' "$to_epoch" > "$sync_file"
+  # Persist sync state in new format: "<epoch> <nrestarts>"
+  printf '%s %s\n' "$to_epoch" "$nrestarts" > "$sync_file"
 
   cat "$errors_file" 2>/dev/null || true
 
