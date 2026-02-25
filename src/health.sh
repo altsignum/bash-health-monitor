@@ -199,7 +199,7 @@ get_service_errors_since_last_activation() {
   to_epoch="$(date -u +%s)"
 
   journalctl -u "$service" --since "@$from_epoch" -o cat --no-pager \
-    | (grep -Pzo '(?ms)^(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?\|(ERROR|FATAL)\|.*?(?=^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?\|[A-Z]+\||\z)|[^\n]*\S[^\n]*\n(?:[ \t]+at [^\n]*(?:\n|$))+)' || true) \
+    | (grep -Pzo '(?ms)^(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?\|(ERROR|FATAL)\|.*?(?=^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?\|[A-Z]+\||\z)|[^\n]*\bUnhandled exception\.[^\n]*\n(?:(?:[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\S+\s+[^:]+:\s*)?[ \t]*(?:--->\s+|at\s+|---[^\n]*---)[^\n]*(?:\n|$))+|[^\n]*\S[^\n]*\n(?:(?:[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\S+\s+[^:]+:\s*)?[ \t]+at [^\n]*(?:\n|$)|(?:[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\S+\s+[^:]+:\s*)?[ \t]*---[^\n]*---(?:\n|$))+)' || true) \
     | tr '\0' '\036' \
     >> "$errors_file"
 
