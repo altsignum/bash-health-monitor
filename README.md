@@ -88,7 +88,10 @@ Base URL: http://{host}:{port}
     }
     ```
 
-* GET /logs?service={name}&n={0..2000}  
+* GET /logs?service={name}&n={0..2000}[&syslog=true]  
+    - `syslog` — journal format:
+        - `false` (default) messages without syslog prefix `-o cat`
+        - `true` — messages with syslog prefix without `-o` parameter
     Returns last `n` lines from `journalctl` for the specified service.  
 
 * GET /status?service={name}  

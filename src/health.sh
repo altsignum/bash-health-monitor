@@ -613,6 +613,7 @@ handle_conn() {
       printf '{"host":"%s"}' "$(json_escape "$host")"
       ;;
     /logs)
+      local syslog="${query[syslog]:-}"
       local n_raw="${query[n]:-}"
       local n=""
 
@@ -643,14 +644,18 @@ handle_conn() {
 
       printf_headers 200 'text/plain; charset=utf-8'
 
-      local seen=0
-      while IFS= read -r line; do
-        seen=1
-        printf "%s\n" "$line"
-      done < <(journalctl -u "$service" -n "$n" -o cat --no-pager || true)
+      if [[ "$syslog" == "true" ]]; then
+        journalctl -u "$service" -n "$n" --no-pager || true
+      else
+        local seen=0
+        while IFS= read -r line; do
+          seen=1
+          printf "%s\n" "$line"
+        done < <(journalctl -u "$service" -n "$n" -o cat --no-pager || true)
 
-      if [[ "$seen" -eq 0 ]]; then
-        printf "no records found\n"
+        if [[ "$seen" -eq 0 ]]; then
+          printf "%s\n" "-- No entries --"
+        fi
       fi
       ;;
     /status)
