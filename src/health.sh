@@ -138,6 +138,33 @@ is_journal_empty() {
   return 0
 }
 
+filter_errors() {
+  local delimiter=$'\036'
+
+  declare -A rules=(
+    ['^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?\|[A-Z]+\|']='\|(ERROR|FATAL)\|'
+    ['^(?!\d{4}-\d{2}-\d{2}\s)(?!\bat\b)\w.*?^\s*at\s']='(?i)\b(exception|error|fatal|unhandled|could not load)\b'
+  )
+
+  local block_regex='' lookup_regex='' signature test lookup
+  for signature in "${!rules[@]}"; do
+    test="${rules["$signature"]}"
+    lookup="(?=[^\n]*${test})${signature}"
+
+    if [[ -z "$block_regex" ]]; then
+      block_regex="(?:$signature)"
+      lookup_regex="(?:$lookup)"
+    else
+      block_regex="${block_regex}|(?:${signature})";
+      lookup_regex="${lookup_regex}|(?:${lookup})";
+    fi
+  done
+
+  local regex="(?ms)^(?:${lookup_regex}).*?(?=^(?:${block_regex})|\\z)"
+
+  grep -Pzo "$regex" | tr '\0' "$delimiter" | tr "$delimiter" $'\n'$'\n' || true
+}
+
 get_service_errors_since_last_activation() {
   local service="$1"
 
@@ -229,9 +256,7 @@ get_service_errors_since_last_activation() {
   local to_epoch
   to_epoch="$(date -u +%s)"
 
-  journalctl -u "$service" --since "@$from_epoch" -o cat --no-pager \
-    | (grep -Pzo '(?ms)^(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?\|(ERROR|FATAL)\|.*?(?=^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?\|[A-Z]+\||\z)|[^\n]*\bUnhandled exception\.[^\n]*\n(?:(?:[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\S+\s+[^:]+:\s*)?[ \t]*(?:--->\s+|at\s+|---[^\n]*---)[^\n]*(?:\n|$))+|[^\n]*\S[^\n]*\n(?:(?:[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\S+\s+[^:]+:\s*)?[ \t]+at [^\n]*(?:\n|$)|(?:[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\S+\s+[^:]+:\s*)?[ \t]*---[^\n]*---(?:\n|$))+)' || true) \
-    | tr '\0' '\036' \
+  journalctl -u "$service" --since "@$from_epoch" -o cat --no-pager | filter_errors \
     >> "$errors_file"
 
   dedupe_errors_file "$errors_file"
