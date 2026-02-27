@@ -162,7 +162,7 @@ filter_errors() {
 
   local regex="(?ms)^(?:${lookup_regex}).*?(?=^(?:${block_regex})|\\z)"
 
-  grep -Pzo "$regex" | tr '\0' "$delimiter" | tr "$delimiter" $'\n'$'\n' || true
+  grep -Pzo "$regex" | tr '\0' "$delimiter" || true
 }
 
 get_service_errors_since_last_activation() {
