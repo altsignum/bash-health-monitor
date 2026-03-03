@@ -699,13 +699,18 @@ handle_conn() {
       local first=1 monitor
       while IFS= read -r monitor || [[ -n "$monitor" ]]; do
         [[ -z "$monitor" ]] && continue
-        (( first )) || printf ','
-        first=0
 
         local base="${monitor%/}"
         local url="${base}/all?ref=$monitor&ids=$ids"
 
-        curl -sS --fail --connect-timeout 2 --max-time 60 "$url"
+        local response
+        if response="$(curl -sS --fail --connect-timeout 2 --max-time 60 "$url" 2>/dev/null)"; then
+          if [[ -n "$response" && ( "$response" == \{* ) ]]; then
+            (( first )) || printf ','
+            first=0
+            printf '%s' "$response"
+          fi
+        fi
       done < <(get_file_lines "monitors.list")
       printf ']'
 
