@@ -152,21 +152,20 @@
         overflow: auto;
       }
 
-      .table-wrap {
-        overflow: auto;
-      }
-
       table {
         width: 100%;
         border-collapse: separate;
         border-spacing: 0;
       }
 
-      thead th {
+      thead {
         position: sticky;
         top: 0;
         background: var(--card);
-        z-index: 3;
+        z-index: 1;
+      }
+
+      thead th {
         box-shadow: inset 0 -1px 0 var(--line);
       }
 
@@ -405,29 +404,27 @@
       </header>
 
       <div class="card">
-        <div class="table-wrap">
-          <table>
-          <thead>
-            <tr>
-              <th>Service</th>
-              <th>Status</th>
-              <th>Active Since</th>
-              <th>Host</th>
-              <th>Details</th>
-            </tr>
-          </thead>
-          <tbody id="rows">
-            <tr>
-              <td class="loading-cell" colspan="5">
-                <div class="loading">
-                  <span class="spinner" aria-hidden="true"></span>
-                  <span>Loading...</span>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-          </table>
-        </div>
+        <table>
+        <thead>
+          <tr>
+            <th>Service</th>
+            <th>Status</th>
+            <th>Active Since</th>
+            <th>Host</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody id="rows">
+          <tr>
+            <td class="loading-cell" colspan="5">
+              <div class="loading">
+                <span class="spinner" aria-hidden="true"></span>
+                <span>Loading...</span>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+        </table>
       </div>
     </div>
 
