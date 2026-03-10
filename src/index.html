@@ -152,21 +152,21 @@
         overflow: auto;
       }
 
+      .table-wrap {
+        overflow: auto;
+      }
+
       table {
         width: 100%;
         border-collapse: separate;
         border-spacing: 0;
       }
 
-      thead {
+      thead th {
         position: sticky;
         top: 0;
         background: var(--card);
-        z-index: 1;
-      }
-
-      thead th {
-        z-index: 2;
+        z-index: 3;
         box-shadow: inset 0 -1px 0 var(--line);
       }
 
@@ -184,6 +184,85 @@
       }
 
       tr:last-child td { border-bottom: none; }
+
+      .host-row td {
+        position: sticky;
+        top: 41px;
+        z-index: 2;
+        padding: 10px 12px;
+        background: linear-gradient(180deg,
+          rgba(25,31,46,0.98),
+          rgba(21,27,40,0.96));
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        box-shadow: inset 0 -1px 0 rgba(138,180,255,0.12);
+      }
+
+      .host-btn {
+        width: 100%;
+        border: 0;
+        padding: 0;
+        background: transparent;
+        color: inherit;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        text-align: left;
+        cursor: pointer;
+        font: inherit;
+      }
+
+      .host-left {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .chevron {
+        width: 10px;
+        height: 10px;
+        border-right: 2px solid var(--muted);
+        border-bottom: 2px solid var(--muted);
+        transform: rotate(45deg);
+        transition: transform 0.15s ease;
+        flex: 0 0 auto;
+        margin-top: -2px;
+      }
+
+      .host-row.collapsed .chevron {
+        transform: rotate(-45deg);
+        margin-top: 0;
+      }
+
+      .host-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .host-meta {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        flex: 0 0 auto;
+        color: var(--muted);
+        font-weight: 500;
+      }
+
+      .host-count {
+        padding: 2px 8px;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.08);
+        background: rgba(255,255,255,0.03);
+        color: var(--text);
+      }
+
+      .row-hidden {
+        display: none;
+      }
 
       .svc {
         display: flex;
@@ -326,7 +405,8 @@
       </header>
 
       <div class="card">
-        <table>
+        <div class="table-wrap">
+          <table>
           <thead>
             <tr>
               <th>Service</th>
@@ -346,7 +426,8 @@
               </td>
             </tr>
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -361,6 +442,7 @@
 
         let isLoadedOnce = false;
         let isRefreshing = false;
+        const collapsedHosts = new Set();
 
         /* ===================== API helper ===================== */
 
@@ -436,6 +518,26 @@
           document.body.removeChild(ta);
         }
 
+        function compareText(a, b) {
+          return String(a ?? "").localeCompare(String(b ?? ""), undefined, {
+            sensitivity: "base",
+            numeric: true
+          });
+        }
+
+        function getStatusRank(status) {
+          switch (status) {
+            case "failed": return 0;
+            case "restarting": return 1;
+            case "unstable": return 2;
+            case "transition": return 3;
+            case "stopped": return 4;
+            case "stable": return 5;
+            case "completed": return 6;
+            default: return 7;
+          }
+        }
+
         function renderRow(item) {
           const name = escapeHtml(item.name);
           const status = escapeHtml(item.status);
@@ -484,7 +586,7 @@
             : `<span class="muted">--</span>`;
 
           return `
-            <tr>
+            <tr class="service-row" data-host="${host}">
               <td>
                 <div class="svc">
                   <span class="dot ${status}" aria-hidden="true"></span>
@@ -515,8 +617,96 @@
           `.trim();
         }
 
+        function groupByHost(items) {
+          const map = new Map();
+
+          for (const item of items) {
+            const host = String(item.host || "Unknown host");
+
+            if (!map.has(host)) map.set(host, []);
+            map.get(host).push(item);
+          }
+
+          return [...map.entries()]
+            .sort((a, b) => compareText(a[0], b[0]))
+            .map(([host, services]) => {
+              const sortedServices = [...services].sort((a, b) => {
+                const statusDiff = getStatusRank(a.status) - getStatusRank(b.status);
+                if (statusDiff !== 0) return statusDiff;
+
+                const nameDiff = compareText(a.name, b.name);
+                if (nameDiff !== 0) return nameDiff;
+
+                return compareText(a.activeSince, b.activeSince);
+              });
+
+              const badCount = sortedServices.filter((x) =>
+                ["failed", "restarting", "unstable", "transition"]
+                  .includes(String(x.status))
+              ).length;
+
+              return {
+                host,
+                services: sortedServices,
+                badCount
+              };
+            });
+        }
+
+        function renderHostRow(group) {
+          const host = escapeHtml(group.host);
+          const isCollapsed = collapsedHosts.has(group.host);
+          const total = group.services.length;
+          const problemText = group.badCount > 0
+            ? `<span class="host-count">Issues: ${group.badCount}</span>`
+            : `<span class="host-count">OK</span>`;
+
+          return `
+            <tr class="host-row${isCollapsed ? " collapsed" : ""}">
+              <td colspan="5">
+                <button
+                  class="host-btn"
+                  type="button"
+                  data-action="toggle-host"
+                  data-host="${host}"
+                  aria-expanded="${isCollapsed ? "false" : "true"}"
+                >
+                  <span class="host-left">
+                    <span class="chevron" aria-hidden="true"></span>
+                    <span class="host-name">${host}</span>
+                  </span>
+                  <span class="host-meta">
+                    <span class="host-count">Services: ${total}</span>
+                    ${problemText}
+                  </span>
+                </button>
+              </td>
+            </tr>
+          `.trim();
+        }
+
         function renderTable(items) {
-          $rows.innerHTML = items.map(renderRow).join("");
+          const groups = groupByHost(items);
+          const html = [];
+
+          for (const group of groups) {
+            html.push(renderHostRow(group));
+
+            const hiddenClass = collapsedHosts.has(group.host)
+              ? " row-hidden"
+              : "";
+
+            for (const service of group.services) {
+              html.push(
+                renderRow(service).replace(
+                  'class="service-row"',
+                  `class="service-row${hiddenClass}"`
+                )
+              );
+            }
+          }
+
+          $rows.innerHTML = html.join("");
           $lastRefresh.textContent =
             `Last refresh: ${new Date().toLocaleString()}`;
           isLoadedOnce = true;
@@ -529,6 +719,16 @@
         }
 
         $rows.addEventListener("click", (e) => {
+          const toggleEl = e.target && e.target.closest
+            ? e.target.closest("[data-action=\"toggle-host\"][data-host]")
+            : null;
+
+          if (toggleEl) {
+            e.preventDefault();
+            toggleHost(toggleEl.getAttribute("data-host") || "");
+            return;
+          }
+
           const copyEl = e.target && e.target.closest
             ? e.target.closest("[data-action=\"copy\"][data-copy]")
             : null;
@@ -540,6 +740,40 @@
             return;
           }
         });
+
+        function toggleHost(host) {
+          if (!host) return;
+
+          if (collapsedHosts.has(host)) {
+            collapsedHosts.delete(host);
+          } else {
+            collapsedHosts.add(host);
+          }
+
+          const isCollapsed = collapsedHosts.has(host);
+          const selectorHost = window.CSS && typeof window.CSS.escape === "function"
+            ? window.CSS.escape(host)
+            : host.replaceAll('\\', '\\\\').replaceAll('"', '\"');
+
+          const hostButton = $rows.querySelector(
+            `[data-action="toggle-host"][data-host="${selectorHost}"]`
+          );
+
+          if (hostButton) {
+            hostButton.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
+
+            const hostRow = hostButton.closest(".host-row");
+            if (hostRow) hostRow.classList.toggle("collapsed", isCollapsed);
+          }
+
+          const serviceRows = $rows.querySelectorAll(
+            `.service-row[data-host="${selectorHost}"]`
+          );
+
+          for (const row of serviceRows) {
+            row.classList.toggle("row-hidden", isCollapsed);
+          }
+        }
 
         /* ===================== Refresh ===================== */
 
